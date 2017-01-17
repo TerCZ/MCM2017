@@ -9,23 +9,35 @@ from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 
 
-# 非线性函数最小二乘法拟合
+# 多项式拟合
+x = np.random.randint(0, 100, 10)
+y = np.random.randint(0, 100, 10)
+x.sort()
+z = np.polyfit(x, y, 6)  # 多项式系数
+x_new = np.linspace(0, 100, 101)
+fit = np.polyval(z, x_new)
+plt.plot(x, y, "o", label="原始数据")
+plt.plot(x_new, fit, label="拟合曲线")
+plt.legend()
+plt.show()
+
+# 非线性函数最小二乘法拟合（对前期猜测要求很高）
 # 定义所求函数
 def func(x, p):
     A, k, theta = p
     return A * np.sin(2*np.pi*k*x + theta)
 
 
-# 定义偏差计算函数
+# 定义误差函数
 def residuals(p, y, x):
     return y - func(x, p)
 
-x = np.linspace(0, -2*np.pi, 100)  # 注意，x范围为[0, -2*pi]
+x = np.linspace(0, 2*np.pi, 100)
 A, k, theta = 10, 0.34, np.pi/6
 y0 = func(x, (A, k, theta))
 y1 = y0 + 2 * np.random.randn(len(x))  # 手动添加噪声
 
-p0 = [7, 0.2, 0]  # 初始猜测的值
+p0 = [11, 0.4, 0.6]  # 初始猜测的值
 plsq = opt.leastsq(residuals, p0, args=(y1, x))
 print([A, k, theta])
 print(plsq[0])
