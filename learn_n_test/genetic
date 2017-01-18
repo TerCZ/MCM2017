@@ -1,0 +1,94 @@
+from string import ascii_uppercase, ascii_lowercase, ascii_letters
+from random import choice, random, randint
+
+
+# target = "Computer Science is the study of algorithms"
+target = list("love")
+gene_length = len(target)
+prob_crossover = 0.8
+prob_mutation = 0.1
+population = 10
+
+
+def crossover(group):
+    """
+    种群交配。根据交配概率从随机产生的交配点交换基因，新的个体不代替老的。
+    """
+    for i in range(int(population * prob_crossover)):
+        if random() < prob_mutation:
+            individual1 = randint(0, population - 1)
+            individual2 = randint(0, population - 1)
+            position = randint(1, gene_length-2)
+            left1, right1 = group[individual1][:position], group[individual1][position:]
+            left2, right2 = group[individual2][:position], group[individual2][position:]
+            group.append(left1 + right2)
+            group.append(left2 + right1)
+
+
+def mutate(group):
+    """
+    个体变异。根据突变概率随机修改一个字符。
+    """
+    for index, trial in enumerate(group):
+        if random() < prob_mutation:
+            position = randint(0, gene_length-1)
+            group[index] = trial[:position] + [choice(ascii_letters)] + trial[position+1:]
+
+
+def select(group):
+    """
+    适应性强的个体更容易生存。
+    """
+    fitness_sum = sum([fitness(trial) for trial in group])
+    kick_out = len(group) - population  # 近似淘汰个数
+    new_group = []
+    best_fitness = 0
+    best = ""
+    if fitness_sum == 0:
+        for trial in group:
+            fitness_trial = fitness(trial)
+            if random() <= kick_out / population:
+                new_group.append(trial)
+                if fitness_trial > best_fitness:
+                    best = trial
+    else:
+        for trial in group:
+            fitness_trial = fitness(trial)
+            if random() <= kick_out * fitness_trial / fitness_sum:
+                new_group.append(trial)
+                if fitness_trial > best_fitness:
+                    best = trial
+
+    # 避免全死了
+    if not new_group:
+        new_group = group
+
+    return new_group, best
+
+
+def fitness(trial):
+    return sum(t == h for t, h in zip(trial, target))
+
+
+def terminate(best):
+    return best == target
+
+
+def main():
+    group = [[choice(ascii_letters) for i in range(gene_length)] for j in range(population)]
+
+    iteration = 0
+    best = group[0]
+    while not terminate(best):
+        iteration += 1
+        mutate(group)
+        crossover(group)
+        group, best = select(group)
+
+        if iteration % 20 == 0:
+            print("#{}".format(iteration), best)
+    print("\n#{}".format(iteration), best)
+
+
+if __name__ == '__main__':
+    main()
