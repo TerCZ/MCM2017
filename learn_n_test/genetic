@@ -1,94 +1,86 @@
-from string import ascii_uppercase, ascii_lowercase, ascii_letters
-from random import choice, random, randint
+import random
+from deap import base, creator, tools
 
 
-# target = "Computer Science is the study of algorithms"
-target = list("love")
-gene_length = len(target)
-prob_crossover = 0.8
-prob_mutation = 0.1
-population = 10
+# 自定义类
+creator.create("FitnessMax", base.Fitness, weights=(1.0,))
+creator.create("Individual", list, fitness=creator.FitnessMax)
+
+# 注册函数
+toolbox = base.Toolbox()
+toolbox.register("attr_bool", random.randint, 0, 1)  # 生成参数
+toolbox.register("individual", tools.initRepeat, creator.Individual, toolbox.attr_bool, 100)  # 生成个体
+toolbox.register("population", tools.initRepeat, list, toolbox.individual)  # 生成种群
 
 
-def crossover(group):
-    """
-    种群交配。根据交配概率从随机产生的交配点交换基因，新的个体不代替老的。
-    """
-    for i in range(int(population * prob_crossover)):
-        if random() < prob_mutation:
-            individual1 = randint(0, population - 1)
-            individual2 = randint(0, population - 1)
-            position = randint(1, gene_length-2)
-            left1, right1 = group[individual1][:position], group[individual1][position:]
-            left2, right2 = group[individual2][:position], group[individual2][position:]
-            group.append(left1 + right2)
-            group.append(left2 + right1)
+def evalOneMax(individual):
+    return sum(individual),
 
 
-def mutate(group):
-    """
-    个体变异。根据突变概率随机修改一个字符。
-    """
-    for index, trial in enumerate(group):
-        if random() < prob_mutation:
-            position = randint(0, gene_length-1)
-            group[index] = trial[:position] + [choice(ascii_letters)] + trial[position+1:]
-
-
-def select(group):
-    """
-    适应性强的个体更容易生存。
-    """
-    fitness_sum = sum([fitness(trial) for trial in group])
-    kick_out = len(group) - population  # 近似淘汰个数
-    new_group = []
-    best_fitness = 0
-    best = ""
-    if fitness_sum == 0:
-        for trial in group:
-            fitness_trial = fitness(trial)
-            if random() <= kick_out / population:
-                new_group.append(trial)
-                if fitness_trial > best_fitness:
-                    best = trial
-    else:
-        for trial in group:
-            fitness_trial = fitness(trial)
-            if random() <= kick_out * fitness_trial / fitness_sum:
-                new_group.append(trial)
-                if fitness_trial > best_fitness:
-                    best = trial
-
-    # 避免全死了
-    if not new_group:
-        new_group = group
-
-    return new_group, best
-
-
-def fitness(trial):
-    return sum(t == h for t, h in zip(trial, target))
-
-
-def terminate(best):
-    return best == target
+# Operator registering
+toolbox.register("evaluate", evalOneMax)
+toolbox.register("mate", tools.cxTwoPoint)
+toolbox.register("mutate", tools.mutFlipBit, indpb=0.05)
+toolbox.register("select", tools.selTournament, tournsize=3)
 
 
 def main():
-    group = [[choice(ascii_letters) for i in range(gene_length)] for j in range(population)]
+    # 初始种群
+    pop = toolbox.population(n=300)
 
-    iteration = 0
-    best = group[0]
-    while not terminate(best):
-        iteration += 1
-        mutate(group)
-        crossover(group)
-        group, best = select(group)
+    # 算法参数，交配率、变异率、迭代次数
+    CXPB, MUTPB, NGEN = 0.5, 0.2, 40
 
-        if iteration % 20 == 0:
-            print("#{}".format(iteration), best)
-    print("\n#{}".format(iteration), best)
+    # 评价每个个体
+    fitnesses = list(map(toolbox.evaluate, pop))
+    for ind, fit in zip(pop, fitnesses):
+        ind.fitness.values = fit
 
+    # 开始迭代
+    for g in range(NGEN):
+        print("#%i" % g, end="\t")
+
+        # 生成后代
+        offspring = toolbox.select(pop, len(pop))
+        offspring = list(map(toolbox.clone, offspring))  # 确保后代均为新的对象
+
+        # 交配
+        for child1, child2 in zip(offspring[::2], offspring[1::2]):
+            if random.random() < CXPB:
+                toolbox.mate(child1, child2)
+                del child1.fitness.values
+                del child2.fitness.values
+
+        # 变异
+        for mutant in offspring:
+            if random.random() < MUTPB:
+                toolbox.mutate(mutant)
+                del mutant.fitness.values
+
+        # 重新计算新的适应度
+        invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+        fitnesses = map(toolbox.evaluate, invalid_ind)
+        for ind, fit in zip(invalid_ind, fitnesses):
+            ind.fitness.values = fit
+
+        # 种群更新
+        pop = offspring
+
+        # 统计结果
+        fits = [ind.fitness.values[0] for ind in pop]
+        length = len(pop)
+        mean = sum(fits) / length
+        sum2 = sum(x * x for x in fits)
+        std = abs(sum2 / length - mean ** 2) ** 0.5
+
+        print("Min %i" % min(fits), end="\t")
+        print("Max %i" % max(fits), end="\t")
+        print("Avg %.2f" % mean, end="\t")
+        print("Std %.2f" % std)
+
+    # 打印结果
+    best_ind = tools.selBest(pop, 1)[0]
+    print("最优个体：%s\n适应度%s" % (best_ind, best_ind.fitness.values))
 
 if __name__ == '__main__':
     main()
