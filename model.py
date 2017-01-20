@@ -1,8 +1,14 @@
 from random import choice
+from math import sqrt
 
 
 CAR_LEN = 2.5
-CAR_EXPECTED_SPEED = 60
+DESIRED_VELOCITY = 80
+MAX_ACCELERATION = 5
+COMFORTABLE_DECELERATION = 5
+ACCELERATION_EXPONENT = 0.5
+MIN_SPACE = 2.5
+DESIRED_HEADWAY = 5
 
 
 class Vehicle:
@@ -12,9 +18,12 @@ class Vehicle:
         self.speed = speed      # 初始速度
         self.lane = lane        # 车道
         self.position = 0       # 车头位置
-
-    def update(self):
-        pass
+        self.v0 = DESIRED_VELOCITY
+        self.a = MAX_ACCELERATION
+        self.b = COMFORTABLE_DECELERATION
+        self.T = DESIRED_HEADWAY
+        self.politeness = 0.3
+        self.dict_thr = 10
 
 
 class LaneManager:
@@ -30,9 +39,9 @@ class LaneManager:
         self.time_step = time_step
 
         # 记录车辆情况
-        self.vehicles = []                          # 按车头位置降序排序
-        self.lanes = [[] for i in range(booth_num)] # 记录每车道车辆，按车头位置降序排序
-        self.valid_lane_indices = []                # 记录可进出的车道编号
+        self.vehicles = []                              # 按车头位置升序排序
+        self.lanes = [[] for i in range(booth_num + 2)] # 记录每车道车辆，按车头位置升序排序，多出两车道放置障碍物，便于处理变道
+        self.valid_lane_indices = []                    # 记录可进出的车道编号
 
         # 根据形状建立车道
         if shape == "isosceles":
@@ -40,26 +49,33 @@ class LaneManager:
         elif shape == "right":
             seg_num = booth_num - lane_num + 1
             seg_length = lane_length / 2 / seg_num
-            for i, lane_index in enumerate(range(lane_num, booth_num)):
+            for i, lane_index in enumerate(range(lane_num + 1, booth_num + 1)):
                 self.add_barrier(lane_index, seg_length * i)
-        self.vehicles.sort(key=lambda x:x.position, reverse=True)   # 确保所有车辆按车头位置降序排列
+        self.vehicles.sort(key=lambda x:x.position)                 # 确保所有车辆按车头位置升序排列
+        self.lanes[0].append(Vehicle("barrier", lane_length, 0, 0)) # 第一、最后道放置障碍物
+        self.lanes[-1].append(Vehicle("barrier", lane_length, 0, 0))
 
     def add_barrier(self, lane_index, barrier_length):
-        barrier1 = Vehicle("barrier", barrier_length, lane_index, 0)
-        barrier2 = Vehicle("barrier", barrier_length, lane_index, 0)
+        barrier1 = Vehicle("barrier", barrier_length, lane_index, 0)    # 前方障碍
+        barrier2 = Vehicle("barrier", barrier_length, lane_index, 0)    # 后方障碍
         barrier1.position = barrier_length
         barrier2.position = self.lane_length
-        self.lanes[lane_index] += [barrier2, barrier1]  # 降序排列
+        self.lanes[lane_index] += [barrier1, barrier2]  # 升序排列
         self.vehicles += [barrier1, barrier2]           # 此列表排序在添加所有障碍物后进行
 
     def add_vehicle(self, lane_index):
         # 新建一辆车
-        vehicle = Vehicle("car", CAR_LEN, lane_index, CAR_EXPECTED_SPEED)
+        vehicle = Vehicle("car", CAR_LEN, lane_index, DESIRED_VELOCITY)
         # 检查是否能进入指定车道
-        last_vehicle = self.lanes[-1]
-        if
-
-
+        if self.lanes[lane_index]:  # 若车道非空
+            last_vehicle = self.lanes[lane_index][0]
+            if last_vehicle.position - vehicle.position >= MIN_SPACE:
+                self.lanes[lane_index].insert(0, vehicle)
+                self.vehicles.insert(0, vehicle)
+            else:
+                del vehicle
+        else:  # 车道为空
+            self.vehicles.insert(0, vehicle)
 
     def add_vehicles(self, num):
         for i in range(num):
@@ -67,7 +83,231 @@ class LaneManager:
             self.add_vehicle(lane_index)
 
     def update(self):
-        pass
+        # 所有车辆前进
+        self.forward()
+        # 车辆变道
+        self.change_lane_acc()
+
+    def forward(self):
+        for lane in self.lanes[1:-1]:
+            # 若车道为空，跳过
+            if not lane:
+                continue
+            # 考虑前面n-1量车
+            for i in range(len(lane) - 1):
+                this_one = lane[i]
+                if this_one.type == "barrier":  # 跳过障碍物
+                    continue
+                front_one = lane[i + 1]
+
+                # 计算加速度
+                s_star = MIN_SPACE + max(0, this_one.speed * this_one.T +
+                                         (this_one.speed * (this_one.speed - front_one.speed)) / 2 /
+                                         sqrt(this_one.a * this_one.b))
+                acc = this_one.a * (1 - (this_one.speed / this_one.v0) ** ACCELERATION_EXPONENT -
+                                    (s_star / (front_one.position - this_one.position - front_one.length)))
+
+                # 前进并判断是否停车
+                if this_one.speed + acc * self.time_step > 0:   # 正常情况
+                    this_one.position += this_one.speed * self.time_step + 0.5 * acc * self.time_step ** 2
+                    this_one.speed += acc * self.time_step
+                else:   # 速度降为零
+                    this_one.position += 0.5 * this_one.speed * self.time_step
+                    this_one.speed = 0
+
+            # 考虑最后一辆车，将最后一辆车的gap视为很长
+            this_one = lane[-1]
+            if this_one.type == "barrier":
+                continue
+            s_star = MIN_SPACE + max(0, this_one.speed * this_one.T + this_one.speed ** 2 / 2 / sqrt(
+                     this_one.a * this_one.b))
+            acc = this_one.a * ( 1 - (this_one.speed / this_one.v0) ** ACCELERATION_EXPONENT - (s_star / 1000))
+            if this_one.speed + acc * self.time_step > 0:   # 正常情况
+                this_one.position += this_one.speed * self.time_step + 0.5 * acc * self.time_step ** 2
+                this_one.speed += acc * self.time_step
+            else:   # 速度降为零
+                this_one.position += 0.5 * this_one.speed * self.time_step
+                this_one.speed = 0
+
+    def change_lane_dist(self):
+        for lane_index, lane in enumerate(self.lanes[1:-1]):    # 考虑实际有车车道
+            for vehicle_index, vehicle in enumerate(lane):      # 车道每辆车单独处理
+                # 忽略障碍物
+                if vehicle.type == "barrier":
+                    continue
+
+                # 前方无车辆则不变道
+                if vehicle_index == len(lane) - 1:
+                    continue
+
+                # 计算当前道路距离
+                my_dist_before = lane[vehicle_index + 1].position - lane[vehicle_index + 1].length - vehicle.length
+
+                # 查找左边插队的车（后方）
+                nearest_left_behind, nearest_left_front = None, None
+                left_overlap_found = False
+                for left_index, left in enumerate(self.lanes[lane_index - 1]):
+                    if vehicle.position - vehicle.length - left.position > 0:
+                        nearest_left_behind = left
+                    elif left.position - left.length - vehicle.position > 0:
+                        nearest_left_front = left
+                        break
+                    else:
+                        left_overlap_found = True
+                        break
+
+                # 若左车道满足安全原则
+                if not left_overlap_found:
+                    # 计算变道后本车前方可行驶距离
+                    if nearest_left_front is None:       # 前方无车时，可行驶距离即道路剩余距离
+                        my_dist_left_after = self.lane_length - vehicle.position
+                    else:
+                        my_dist_left_after = nearest_left_front.position - nearest_left_front.length - vehicle.position
+                    # 变化量
+                    my_dist_left_delta = my_dist_left_after - my_dist_before
+
+                    # 计算变道前后，后方车辆可行驶距离
+                    if nearest_left_behind is None:      # 若后方无车，距离变化量为零
+                        left_behind_dist_delta = 0
+                    else:                           # 若有车，考虑前方是否有车
+                        # 变道前
+                        if nearest_left_front is None:   # 前方无车时，可行驶距离即道路剩余距离
+                            left_behind_dist_before = self.lane_length - nearest_left_behind.position
+                        else:
+                            left_behind_dist_before = nearest_left_front.position - nearest_left_front.length - nearest_left_behind.position
+                        # 变道后
+                        left_behind_dist_after = vehicle.position - vehicle.length - nearest_left_behind.position
+                        # 变化量
+                        left_behind_dist_delta = left_behind_dist_after - left_behind_dist_before
+
+                # 查找右边插队的车（后方）
+                nearest_right_behind, nearest_right_front = None, None
+                right_overlap_found = False
+                for right_index, right in enumerate(self.lanes[lane_index + 1]):
+                    if vehicle.position - right.position - vehicle.length > 0:
+                        nearest_right_behind = right
+                    elif right.position - vehicle.position - right.length > 0:
+                        nearest_right_front = right
+                        break
+                    else:
+                        right_overlap_found = True
+                        break
+
+                # 若右车道满足安全原则
+                if not right_overlap_found:
+                    # 计算变道后本车前方可行驶距离
+                    if nearest_right_front is None:  # 前方无车时，可行驶距离即道路剩余距离
+                        my_dist_right_after = self.lane_length - vehicle.position
+                    else:
+                        my_dist_right_after = nearest_right_front.position - nearest_right_front.length - vehicle.position
+                    # 变化量
+                    my_dist_right_delta = my_dist_right_after - my_dist_before
+
+                    # 计算变道前后，后方车辆可行驶距离
+                    if nearest_right_behind is None:  # 若后方无车，距离变化量为零
+                        right_behind_dist_delta = 0
+                    else:  # 若有车，考虑前方是否有车
+                        # 变道前
+                        if nearest_right_front is None:  # 前方无车时，可行驶距离即道路剩余距离
+                            right_behind_dist_before = self.lane_length - nearest_right_behind.position
+                        else:
+                            right_behind_dist_before = nearest_right_front.position - nearest_right_front.length - nearest_right_behind.position
+                        # 变道后
+                        right_behind_dist_after = vehicle.position - vehicle.length - nearest_right_behind.position
+                        # 变化量
+                        right_behind_dist_delta = right_behind_dist_after - right_behind_dist_before
+
+                # 跳过左右均不可换道情况
+                if left_overlap_found and right_overlap_found:
+                    continue
+
+                # 看是否满足变道激励原则
+                go_left, go_right = False, False
+                if my_dist_left_delta + vehicle.politeness * left_behind_dist_delta >= vehicle.dist_thr:
+                    go_left = True
+                if my_dist_right_delta + vehicle.politeness * right_behind_dist_delta >= vehicle.dist_thr:
+                    go_right = True
+                if go_left and go_right:                                    # 如果同时可以左右换道
+                    if left_behind_dist_delta >= right_behind_dist_delta:   # 选择对后方车辆影响更小的车道，此处左转
+                        if nearest_left_front is None:
+                            self.lanes[lane_index - 1].append(vehicle)
+                        else:
+                            self.lanes[lane_index - 1].insert(left_index, vehicle)
+                    else:                                                   # 右转
+                        if nearest_right_front is None:
+                            self.lanes[lane_index + 1].append(vehicle)
+                        else:
+                            self.lanes[lane_index + 1].insert(right_index, vehicle)
+                    lane[vehicle_index] = None
+                elif go_left:
+                    if nearest_left_front is None:
+                        self.lanes[lane_index - 1].append(vehicle)
+                    else:
+                        self.lanes[lane_index - 1].insert(left_index, vehicle)
+                    lane[vehicle_index] = None
+                elif go_right:
+                    if nearest_right_front is None:
+                        self.lanes[lane_index + 1].append(vehicle)
+                    else:
+                        self.lanes[lane_index + 1].insert(right_index, vehicle)
+                    lane[vehicle_index] = None
+
+            self.lanes[lane_index] = [x for x in lane if x is not None]
+
+    def change_lane_acc(self):
+        for lane_index, lane in enumerate(self.lanes[1:-1]):
+            new_lane = []
+            for vehicle_index, vehicle in enumerate(lane):
+                # 忽略障碍物
+                if vehicle.type == "barrier":
+                    continue
+
+                # 查找左边插队的车（后方）
+                gap_found = False
+                for left_index, left_vehicle in enumerate(self.lanes[lane_index - 1]):
+                    if left_vehicle.position - vehicle.position - left_vehicle.length > 0:
+                        gap_found = True
+                        break
+                if left_index != 0:  # 后方有车时
+                    # 计算B前后加速度
+                    behind_vehicle = self.lanes[lane_index - 1][left_index - 1]
+                    behind_front = self.lanes[lane_index - 1][left_index]
+                    behind_s_star_before = MIN_SPACE + max(0, behind_vehicle.speed * behind_vehicle.T +
+                                                           (behind_vehicle.speed * (
+                                                               behind_vehicle.speed - behind_front.speed)) / 2 /
+                                                           sqrt(behind_vehicle.a * behind_vehicle.b))
+                    behind_acc_before = behind_vehicle.a * (1 - (behind_vehicle.speed / behind_vehicle.v0) **
+                                                            ACCELERATION_EXPONENT - (
+                                                                behind_s_star_before / (behind_front.position -
+                                                                                        behind_vehicle.position - behind_front.length)))
+                    behind_s_star_after = MIN_SPACE + max(0, behind_vehicle.speed * behind_vehicle.T +
+                                                          (behind_vehicle.speed * (
+                                                              behind_vehicle.speed - vehicle.speed)) / 2 /
+                                                          sqrt(behind_vehicle.a * behind_vehicle.b))
+                    behind_acc_after = behind_vehicle.a * (1 - (behind_vehicle.speed / behind_vehicle.v0) **
+                                                           ACCELERATION_EXPONENT - (
+                                                               behind_s_star_after / (behind_front.position -
+                                                                                      behind_vehicle.position - behind_front.length)))
+                    delta_acc_b = behind_acc_after - behind_acc_before
+                    # 计算M前后加速度
+                    if vehicle_index != len(lane) - 1:  # 若前方有车
+                        front_one = lane[vehicle_index + 1]
+                        s_star_before = MIN_SPACE + max(0, vehicle.speed * vehicle.T +
+                                                        (vehicle.speed * (vehicle.speed - front_one.speed)) / 2 /
+                                                        sqrt(vehicle.a * vehicle.b))
+                        acc_before = vehicle.a * (1 - (vehicle.speed / vehicle.v0) ** ACCELERATION_EXPONENT -
+                                                  (s_star_before / (
+                                                      front_one.position - vehicle.position - front_one.length)))
+                        s_star_after = MIN_SPACE + max(0, vehicle.speed * vehicle.T +
+                                                       (vehicle.speed * (vehicle.speed - behind_front.speed)) / 2 /
+                                                       sqrt(vehicle.a * vehicle.b))
+                        acc_after = vehicle.a * (1 - (vehicle.speed / vehicle.v0) ** ACCELERATION_EXPONENT -
+                                                 (s_star_after / (
+                                                     behind_front.position - vehicle.position - behind_front.length)))
+                        delta_acc_m = acc_after - acc_before
+                    else:  # 若前方无车
+                        pass
+                        # 查找右边插队的车（后方）
 
     def get_recent_out(self):
         pass
