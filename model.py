@@ -1,15 +1,16 @@
-from random import choice
-from math import sqrt
+from random import choice, randint
+from math import sqrt, ceil, floor
 
 
 CAR_LEN = 5
-DESIRED_VELOCITY = 10
+DESIRED_VELOCITY = 60
 MAX_ACCELERATION = 1
 COMFORTABLE_DECELERATION = 3
 ACCELERATION_EXPONENT = 5
 MIN_SPACE = 2
 DESIRED_HEADWAY = 1.5
 SPEED_LIMIT = 10
+OUT_BUFFER = 10
 
 
 class Vehicle:
@@ -47,13 +48,13 @@ class LaneManager:
     管理区域道路，包括道路分流合流、收费站减速停车等情况
     shape: "side square", "squares", "isosceles", "right"
     """
-    def __init__(self, lane_num, booth_num, lane_length, shape, pattern, booth_type, time_step):
+    def __init__(self, lane_num, booth_num, lane_length, shape, pattern, interval, booth_type, time_step):
         # 道路基本信息
         self.lane_num = lane_num                                # 通行车道数
         self.booth_num = booth_num                              # 收费亭个数，默认大于等于车道数
-        self.lane_length = 123.2 + 44 * (booth_num - lane_num)  # 区域总长度，收费站放置于中央位置
-        self.limit_length = self.lane_length / 2                # 限速区域长度
-        self.speed_limit = SPEED_LIMIT                          # 收费区域限速
+        # self.lane_length = 123.2 + 44 * (booth_num - lane_num)  # 区域总长度，收费站放置于中央位置
+        # self.limit_length = self.lane_length / 2                # 限速区域长度
+        # self.speed_limit = SPEED_LIMIT                          # 收费区域限速
         self.booth_type = booth_type                            # 收费亭类型
         self.shape = shape                                      # 收费区域形状
         self.pattern = pattern                                  # 合流模式
@@ -68,34 +69,52 @@ class LaneManager:
         self.total_time_spent = 0                       # 记录通过车辆总花费时间
 
         # 根据形状建立车道
-        if shape == "isosceles":
-            seg_num = int((booth_num - lane_num) // 2)
-            seg_length = 5 / 6 * self.lane_length / (booth_num - lane_num)
-            for i, j in zip(range(1, seg_num + 1), range(seg_num, 0, -1)):
-                self.add_barrier(i, seg_length * j)
-            for i in range(1, booth_num - lane_num - seg_num + 1):
-                self.add_barrier(seg_num + lane_num + i, seg_length * i)
-            self.valid_lane_indices = range(seg_num + 1, seg_num + lane_num + 1)
-        elif shape == "right":
-            seg_length = 5 / 12 * self.lane_length / (booth_num - lane_num)
-            for i in range(1, booth_num - lane_num + 1):
-                self.add_barrier(lane_num + i, seg_length * i)
-            self.valid_lane_indices = range(1, lane_num + 1)
-        elif shape == "squares":
-            seg_num = int((booth_num - lane_num) // 2)
-            seg_length = 5 / 12 * self.lane_length
-            for i, j in zip(range(1, seg_num + 1), range(seg_num, 0, -1)):
-                self.add_barrier(i, seg_length * j)
-            for i in range(1, booth_num - lane_num - seg_num + 1):
-                self.add_barrier(seg_num + lane_num + i, seg_length * i)
-            self.valid_lane_indices = range(seg_num + 1, seg_num + lane_num + 1)
-        elif shape == "side square":
-            seg_length = 5 / 12 * self.lane_length
-            for i in range(1, booth_num - lane_num + 1):
-                self.add_barrier(lane_num + i, seg_length)
-            self.valid_lane_indices = range(1, lane_num + 1)
-        else:
-            raise RuntimeError("wrong shape")
+        if shape == "symmetric":
+            upper_seg_num = ceil((booth_num - lane_num) / 2)
+            lower_seg_num = floor((booth_num - lane_num) / 2)
+            seg_length = interval * CAR_LEN
+            self.lane_length = OUT_BUFFER + upper_seg_num * (interval + 1) * (CAR_LEN + MIN_SPACE)
+            for i, j in zip(range(1, upper_seg_num + 1), range(upper_seg_num, 0, -1)):
+                self.add_barrier_v2(i, seg_length * j)
+            for i in range(1, lower_seg_num + 1):
+                self.add_barrier_v2(upper_seg_num + lane_num + i, seg_length * i)
+        elif shape == "side":
+            seg_num = (booth_num - lane_num)
+            seg_length = interval * CAR_LEN
+            self.lane_length = OUT_BUFFER + seg_num * (interval + 1) * (CAR_LEN + MIN_SPACE)
+            for i in range(1, seg_num + 1):
+                self.add_barrier_v2(lane_num + i, seg_length * i)
+
+
+        # 根据形状建立车道
+        # if shape == "isosceles":
+        #     seg_num = int((booth_num - lane_num) // 2)
+        #     seg_length = 5 / 6 * self.lane_length / (booth_num - lane_num)
+        #     for i, j in zip(range(1, seg_num + 1), range(seg_num, 0, -1)):
+        #         self.add_barrier(i, seg_length * j)
+        #     for i in range(1, booth_num - lane_num - seg_num + 1):
+        #         self.add_barrier(seg_num + lane_num + i, seg_length * i)
+        #     self.valid_lane_indices = range(seg_num + 1, seg_num + lane_num + 1)
+        # elif shape == "right":
+        #     seg_length = 5 / 12 * self.lane_length / (booth_num - lane_num)
+        #     for i in range(1, booth_num - lane_num + 1):
+        #         self.add_barrier(lane_num + i, seg_length * i)
+        #     self.valid_lane_indices = range(1, lane_num + 1)
+        # elif shape == "squares":
+        #     seg_num = int((booth_num - lane_num) // 2)
+        #     seg_length = 5 / 12 * self.lane_length
+        #     for i, j in zip(range(1, seg_num + 1), range(seg_num, 0, -1)):
+        #         self.add_barrier(i, seg_length * j)
+        #     for i in range(1, booth_num - lane_num - seg_num + 1):
+        #         self.add_barrier(seg_num + lane_num + i, seg_length * i)
+        #     self.valid_lane_indices = range(seg_num + 1, seg_num + lane_num + 1)
+        # elif shape == "side square":
+        #     seg_length = 5 / 12 * self.lane_length
+        #     for i in range(1, booth_num - lane_num + 1):
+        #         self.add_barrier(lane_num + i, seg_length)
+        #     self.valid_lane_indices = range(1, lane_num + 1)
+        # else:
+        #     raise RuntimeError("wrong shape")
 
         # 第一、最后道放置障碍物
         barrier1 = Vehicle("barrier", self.lane_length, 0)
@@ -105,17 +124,22 @@ class LaneManager:
         self.lanes[0].append(barrier1)
         self.lanes[-1].append(barrier2)
 
-    def add_barrier(self, lane_index, barrier_length):
-        barrier1 = Vehicle("barrier", barrier_length, 0)    # 前方障碍
-        barrier2 = Vehicle("barrier", barrier_length, 0)    # 后方障碍
-        barrier1.position = barrier_length                  # 升序排列
-        barrier2.position = self.lane_length
-        self.lanes[lane_index].append(barrier1)
-        self.lanes[lane_index].append(barrier2)
+    def add_barrier_v2(self, lane_index, barrier_length):
+        barrier = Vehicle("barrier", barrier_length, 0)    # 后方障碍
+        barrier.position = self.lane_length
+        self.lanes[lane_index].append(barrier)
+
+    # def add_barrier(self, lane_index, barrier_length):
+    #     barrier1 = Vehicle("barrier", barrier_length, 0)    # 前方障碍
+    #     barrier2 = Vehicle("barrier", barrier_length, 0)    # 后方障碍
+    #     barrier1.position = barrier_length                  # 升序排列
+    #     barrier2.position = self.lane_length
+    #     self.lanes[lane_index].append(barrier1)
+    #     self.lanes[lane_index].append(barrier2)
 
     def add_vehicle(self, lane_index):
         # 新建一辆车
-        vehicle = Vehicle("car")
+        vehicle = Vehicle("car", speed=0)
 
         # 检查是否能进入指定车道
         if self.lanes[lane_index]:  # 若车道非空
@@ -129,7 +153,7 @@ class LaneManager:
 
     def add_vehicles(self, num):
         for i in range(num):
-            lane_index = choice(self.valid_lane_indices)
+            lane_index = randint(1, self.booth_num)
             self.add_vehicle(lane_index)
 
     def update(self):
@@ -154,24 +178,74 @@ class LaneManager:
             self.lanes[lane_index] = [x for x in lane if x is not None]
 
 
-    def forward(self, back, front=None):
+    # def forward(self, back, front=None):
+    #     if front is None:   # 前方无车时，视前车车速正无穷，车距正无穷
+    #         # 计算加速度
+    #         if self.lane_length / 2 - self.limit_length <= back.position < self.lane_length / 2:
+    #             acc = back.a * (1 - (back.speed / self.speed_limit) ** ACCELERATION_EXPONENT)
+    #         else:
+    #             acc = back.a * (1 - (back.speed / back.v0) ** ACCELERATION_EXPONENT)
+    #
+    #         # 判断是否停车
+    #         if back.speed + acc * self.time_step > 0:  # 正常情况
+    #             new_position = back.position + back.speed * self.time_step + 0.5 * acc * self.time_step ** 2
+    #             # 经过收费站停车
+    #             if back.position < self.lane_length / 2 and new_position >= self.lane_length / 2 and self.booth_type != "nonstop":
+    #                 back.position = self.lane_length / 2
+    #                 back.speed = 0
+    #             else:
+    #                 back.position = new_position
+    #                 back.speed += acc * self.time_step
+    #         else:  # 速度降为零
+    #             back.position += 0.5 * back.speed * self.time_step
+    #             back.speed = 0
+    #     else:
+    #         # 若两车间无间隔，无需移动后车，直接返回
+    #         if front.position - front.length - back.position == 0:
+    #             back.speed = 0
+    #             return
+    #
+    #         # 计算加速度，区分是否在减速去内
+    #         s_star = back.s0 + max(0, back.speed * back.T + (back.speed * (back.speed - front.speed)) / 2 / sqrt(
+    #                  back.a * back.b))
+    #         if self.lane_length / 2 - self.limit_length <= back.position < self.lane_length / 2:
+    #             acc = back.a * (1 - (back.speed / self.speed_limit) ** ACCELERATION_EXPONENT - (
+    #                   s_star / (front.position - back.position - front.length)))
+    #         else:
+    #             acc = back.a * (1 - (back.speed / back.v0) ** ACCELERATION_EXPONENT - (
+    #                   s_star / (front.position - back.position - front.length)))
+    #
+    #         # 判断是否停车
+    #         if back.speed + acc * self.time_step > 0:   # 正常情况
+    #             new_position = back.position + back.speed * self.time_step + 0.5 * acc * self.time_step ** 2
+    #             # 经过收费站停车
+    #             if back.position < self.lane_length / 2 and new_position >= self.lane_length / 2 and self.booth_type != "nonstop":
+    #                 back.position = self.lane_length / 2
+    #                 back.speed = 0
+    #             else:
+    #                 back.position = new_position
+    #                 back.speed += acc * self.time_step
+    #         else:                                       # 速度降为零
+    #             back.position += 0.5 * back.speed * self.time_step
+    #             back.speed = 0
+    #
+    #         # 判断是否撞车
+    #         if front.position - front.length - back.position < 0:
+    #             back.position = front.position - front.length
+    #             back.speed = 0
+    #             self.crash_count += 1
+
+    def forward_v2(self, back, front=None):
         if front is None:   # 前方无车时，视前车车速正无穷，车距正无穷
             # 计算加速度
-            if self.lane_length / 2 - self.limit_length <= back.position < self.lane_length / 2:
-                acc = back.a * (1 - (back.speed / self.speed_limit) ** ACCELERATION_EXPONENT)
-            else:
-                acc = back.a * (1 - (back.speed / back.v0) ** ACCELERATION_EXPONENT)
+            acc = back.a * (1 - (back.speed / back.v0) ** ACCELERATION_EXPONENT)
 
             # 判断是否停车
             if back.speed + acc * self.time_step > 0:  # 正常情况
                 new_position = back.position + back.speed * self.time_step + 0.5 * acc * self.time_step ** 2
                 # 经过收费站停车
-                if back.position < self.lane_length / 2 and new_position >= self.lane_length / 2 and self.booth_type != "nonstop":
-                    back.position = self.lane_length / 2
-                    back.speed = 0
-                else:
-                    back.position = new_position
-                    back.speed += acc * self.time_step
+                back.position = new_position
+                back.speed += acc * self.time_step
             else:  # 速度降为零
                 back.position += 0.5 * back.speed * self.time_step
                 back.speed = 0
@@ -184,23 +258,15 @@ class LaneManager:
             # 计算加速度，区分是否在减速去内
             s_star = back.s0 + max(0, back.speed * back.T + (back.speed * (back.speed - front.speed)) / 2 / sqrt(
                      back.a * back.b))
-            if self.lane_length / 2 - self.limit_length <= back.position < self.lane_length / 2:
-                acc = back.a * (1 - (back.speed / self.speed_limit) ** ACCELERATION_EXPONENT - (
-                      s_star / (front.position - back.position - front.length)))
-            else:
-                acc = back.a * (1 - (back.speed / back.v0) ** ACCELERATION_EXPONENT - (
-                      s_star / (front.position - back.position - front.length)))
+            acc = back.a * (1 - (back.speed / back.v0) ** ACCELERATION_EXPONENT - (
+                  s_star / (front.position - back.position - front.length)))
 
             # 判断是否停车
             if back.speed + acc * self.time_step > 0:   # 正常情况
                 new_position = back.position + back.speed * self.time_step + 0.5 * acc * self.time_step ** 2
                 # 经过收费站停车
-                if back.position < self.lane_length / 2 and new_position >= self.lane_length / 2 and self.booth_type != "nonstop":
-                    back.position = self.lane_length / 2
-                    back.speed = 0
-                else:
-                    back.position = new_position
-                    back.speed += acc * self.time_step
+                back.position = new_position
+                back.speed += acc * self.time_step
             else:                                       # 速度降为零
                 back.position += 0.5 * back.speed * self.time_step
                 back.speed = 0
@@ -220,12 +286,12 @@ class LaneManager:
             for i in range(len(lane) - 1):
                 if lane[i].type == "barrier":   # 跳过障碍物
                     continue
-                self.forward(lane[i], lane[i + 1])
+                self.forward_v2(lane[i], lane[i + 1])
 
             # 最后一辆车
             if lane[-1].type == "barrier":
                 continue
-            self.forward(lane[-1])
+            self.forward_v2(lane[-1])
 
     def change_lane_dist(self):
         for lane_index, lane in enumerate(self.lanes[1:-1]):    # 考虑实际有车车道

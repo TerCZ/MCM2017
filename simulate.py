@@ -4,14 +4,14 @@ from time import sleep
 
 TIME_STEP = 0.3
 LANE_NUM = 4
-BOOTH_NUM = 8
+BOOTH_NUM = 10
 LANE_LEN = 100              # 区域总长
-VEHICLE_PER_HOUR = 3600
+VEHICLE_PER_HOUR = 6000
 
 
 def main():
-    manager = LaneManager(lane_num=LANE_NUM, booth_num=BOOTH_NUM, lane_length=LANE_LEN, shape="side square",
-                          pattern="regular", booth_type="human", time_step=TIME_STEP)
+    manager = LaneManager(lane_num=LANE_NUM, booth_num=BOOTH_NUM, lane_length=LANE_LEN, shape="side",
+                          pattern="regular", interval=4, booth_type="human", time_step=TIME_STEP)
 
     vehicle_per_sec = 3600 / VEHICLE_PER_HOUR
     timer, remainder, vehicle_count = 0, 0, 0
@@ -33,7 +33,7 @@ def main():
 
         # 全局更新
         manager.info()
-        sleep(0.05)
+        sleep(0.04)
         manager.update()
     out_count, total_time_spent, crash_count, lane_change_count = manager.get_stat()
     print("throughput\t", out_count / timer)
