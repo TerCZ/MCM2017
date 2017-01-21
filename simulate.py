@@ -2,22 +2,20 @@ from model import LaneManager
 from time import sleep
 
 
-TIME_STEP = 0.5
-LANE_NUM = 2
-BOOTH_NUM = 2
-LANE_LEN = 100           # 每段路长度，由收费站分成两段
-VEHICLE_PER_HOUR = 7000
-SPEED_LIMIT = 60        # km/h
-SHAPE = "right"
+TIME_STEP = 0.3
+LANE_NUM = 4
+BOOTH_NUM = 8
+LANE_LEN = 100              # 区域总长
+VEHICLE_PER_HOUR = 3600
 
 
 def main():
-    manager = LaneManager(LANE_NUM, BOOTH_NUM, LANE_LEN, SPEED_LIMIT, SHAPE, TIME_STEP)
+    manager = LaneManager(lane_num=LANE_NUM, booth_num=BOOTH_NUM, lane_length=LANE_LEN, shape="right",
+                          pattern="regular", booth_type="human", time_step=TIME_STEP)
 
     vehicle_per_sec = 3600 / VEHICLE_PER_HOUR
-    timer, remainder = 0, 0
-    out_num = 0
-    while timer <= 1000:
+    timer, remainder, vehicle_count = 0, 0, 0
+    while timer <= 3600:
         # 更新时间
         timer += TIME_STEP
         # 计算此循环内新加入车辆数
@@ -31,13 +29,17 @@ def main():
         # 添加车辆
         if new_vehicle_num:
             manager.add_vehicles(int(new_vehicle_num))
+            vehicle_count += new_vehicle_num
 
         # 全局更新
         manager.info()
+        sleep(0.05)
         manager.update()
-        out_num += manager.get_recent_out()
-
-    print("throughput:", out_num / timer)
+    out_count, total_time_spent, crash_count, lane_change_count = manager.get_stat()
+    print("throughput\t", out_count / timer)
+    print("latency\t", total_time_spent / vehicle_count)
+    print("lane change\t", lane_change_count)
+    print("crash\t", crash_count)
 
 if __name__ == '__main__':
     main()
