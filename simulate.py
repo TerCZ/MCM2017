@@ -7,7 +7,7 @@ LANE_NUM = 2
 BOOTH_NUM = 2
 LANE_LEN = 100           # 每段路长度，由收费站分成两段
 VEHICLE_PER_HOUR = 7000
-SPEED_LIMIT = 80        # km/h
+SPEED_LIMIT = 60        # km/h
 SHAPE = "right"
 
 

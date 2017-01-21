@@ -2,13 +2,13 @@ from random import choice
 from math import sqrt
 
 
-CAR_LEN = 2.5
-DESIRED_VELOCITY = 80
-MAX_ACCELERATION = 5
-COMFORTABLE_DECELERATION = 5
-ACCELERATION_EXPONENT = 0.5
-MIN_SPACE = 2.5
-DESIRED_HEADWAY = 5
+CAR_LEN = 5
+DESIRED_VELOCITY = 50
+MAX_ACCELERATION = 1
+COMFORTABLE_DECELERATION = 3
+ACCELERATION_EXPONENT = 4
+MIN_SPACE = 2
+DESIRED_HEADWAY = 1.5
 
 
 class Vehicle:
@@ -22,7 +22,8 @@ class Vehicle:
         self.a = MAX_ACCELERATION
         self.b = COMFORTABLE_DECELERATION
         self.T = DESIRED_HEADWAY
-        self.politeness = 0.3
+        self.s0 = MIN_SPACE
+        self.politeness = 0.5
         self.dist_thr = 1
 
 
@@ -92,7 +93,7 @@ class LaneManager:
 
     def update(self):
         # 所有车辆前进
-        self.forward()
+        self.forward_all()
 
         # 车辆变道
         self.info()
@@ -101,49 +102,56 @@ class LaneManager:
             print("changed!")
             self.info()
 
-    def forward(self):
+    def forward(self, back, front=None):
+        if front is None:   # 前方无车时，视前车车速正无穷，车距正无穷
+            # 计算加速度
+            acc = back.a * (1 - (back.speed / back.v0) ** ACCELERATION_EXPONENT)
+
+            # 判断是否停车
+            if back.speed + acc * self.time_step > 0:  # 正常情况
+                back.position += back.speed * self.time_step + 0.5 * acc * self.time_step ** 2
+                back.speed += acc * self.time_step
+            else:  # 速度降为零
+                back.position += 0.5 * back.speed * self.time_step
+                back.speed = 0
+        else:
+            # 若两车间无间隔，无需移动后车，直接返回
+            if front.position - front.length - back.position == 0:
+                back.speed = 0
+                return
+
+            # 计算加速度
+            s_star = back.s0 + max(0, back.speed * back.T + (back.speed * (back.speed - front.speed)) / 2 / sqrt(back.a * back.b))
+            acc = back.a * (1 - (back.speed / back.v0) ** ACCELERATION_EXPONENT - (s_star / (front.position - back.position - front.length)))
+
+            # 判断是否停车
+            if back.speed + acc * self.time_step > 0:   # 正常情况
+                back.position += back.speed * self.time_step + 0.5 * acc * self.time_step ** 2
+                back.speed += acc * self.time_step
+            else:                                       # 速度降为零
+                back.position += 0.5 * back.speed * self.time_step
+                back.speed = 0
+
+            # 判断是否撞车
+            if front.position - front.length - back.position < 0:
+                print("crash!")
+                back.position = front.position - front.length
+
+    def forward_all(self):
         for lane in self.lanes[1:-1]:
-            # 若车道为空，跳过
-            if not lane:
+            if not lane:    # 若车道为空，跳过
                 continue
+
             # 考虑前面n-1量车
             for i in range(len(lane) - 1):
-                this_one = lane[i]
-                if this_one.type == "barrier":  # 跳过障碍物
+                if lane[i].type == "barrier":   # 跳过障碍物
                     continue
-                front_one = lane[i + 1]
+                self.forward(lane[i], lane[i + 1])
 
-                # 计算加速度
-                s_star = MIN_SPACE + max(0, this_one.speed * this_one.T +
-                                         (this_one.speed * (this_one.speed - front_one.speed)) / 2 /
-                                         sqrt(this_one.a * this_one.b))
-                if front_one.position - this_one.position - front_one.length == 0:
-                    acc = 0
-                else:
-                    acc = this_one.a * (1 - (this_one.speed / this_one.v0) ** ACCELERATION_EXPONENT -
-                                        (s_star / (front_one.position - this_one.position - front_one.length)))
-
-                # 前进并判断是否停车
-                if this_one.speed + acc * self.time_step > 0:   # 正常情况
-                    this_one.position += this_one.speed * self.time_step + 0.5 * acc * self.time_step ** 2
-                    this_one.speed += acc * self.time_step
-                else:   # 速度降为零
-                    this_one.position += 0.5 * this_one.speed * self.time_step
-                    this_one.speed = 0
-
-            # 考虑最后一辆车，将最后一辆车的gap视为很长
-            this_one = lane[-1]
-            if this_one.type == "barrier":
+            # 最后一辆车
+            if lane[-1].type == "barrier":
                 continue
-            s_star = MIN_SPACE + max(0, this_one.speed * this_one.T + this_one.speed ** 2 / 2 / sqrt(
-                     this_one.a * this_one.b))
-            acc = this_one.a * (1 - (this_one.speed / this_one.v0) ** ACCELERATION_EXPONENT - (s_star / 1000))
-            if this_one.speed + acc * self.time_step > 0:   # 正常情况
-                this_one.position += this_one.speed * self.time_step + 0.5 * acc * self.time_step ** 2
-                this_one.speed += acc * self.time_step
-            else:   # 速度降为零
-                this_one.position += 0.5 * this_one.speed * self.time_step
-                this_one.speed = 0
+            self.forward(lane[-1])
 
     def change_lane_dist(self):
         any_change = False
