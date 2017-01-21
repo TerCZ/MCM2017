@@ -3,12 +3,13 @@ from math import sqrt
 
 
 CAR_LEN = 5
-DESIRED_VELOCITY = 20
+DESIRED_VELOCITY = 10
 MAX_ACCELERATION = 1
 COMFORTABLE_DECELERATION = 3
 ACCELERATION_EXPONENT = 5
 MIN_SPACE = 2
 DESIRED_HEADWAY = 1.5
+SPEED_LIMIT = 10
 
 
 class Vehicle:
@@ -25,37 +26,38 @@ class Vehicle:
             self.T = DESIRED_HEADWAY            # 等待时间
             self.s0 = MIN_SPACE                 # 与前车最小间隔
             self.politeness = 0.5               # 礼貌程度，影响变道决策
-            self.dist_thr = 5                   # 变道的带来收益的阈值
+            self.dist_thr = 2                   # 变道的带来收益的阈值
         elif type == "auto":
-            self.length = CAR_LEN  # 车辆长度
-            self.speed = DESIRED_VELOCITY  # 初始速度
-            self.v0 = DESIRED_VELOCITY  # 理想速度（限速区域即修改此值）
-            self.a = MAX_ACCELERATION  # 最大加速度
-            self.b = COMFORTABLE_DECELERATION  # 舒适减速度
-            self.T = DESIRED_HEADWAY  # 等待时间
-            self.s0 = MIN_SPACE  # 与前车最小间隔
-            self.politeness = 0.5  # 礼貌程度，影响变道决策
-            self.dist_thr = 5  # 变道的带来收益的阈值
+            self.length = CAR_LEN               # 车辆长度
+            self.speed = DESIRED_VELOCITY       # 初始速度
+            self.v0 = DESIRED_VELOCITY          # 理想速度（限速区域即修改此值）
+            self.a = MAX_ACCELERATION           # 最大加速度
+            self.b = COMFORTABLE_DECELERATION   # 舒适减速度
+            self.T = DESIRED_HEADWAY            # 等待时间
+            self.s0 = MIN_SPACE                 # 与前车最小间隔
+            self.politeness = 0.5               # 礼貌程度，影响变道决策
+            self.dist_thr = 5                   # 变道的带来收益的阈值
         elif type == "barrier":
-            self.length = length  # 车辆长度
-            self.speed = speed  # 初始速度
+            self.length = length                # 车辆长度
+            self.speed = speed                  # 初始速度
 
 
 class LaneManager:
     """
     管理区域道路，包括道路分流合流、收费站减速停车等情况
+    shape: "side square", "squares", "isosceles", "right"
     """
     def __init__(self, lane_num, booth_num, lane_length, shape, pattern, booth_type, time_step):
         # 道路基本信息
-        self.lane_num = lane_num                        # 通行车道数
-        self.booth_num = booth_num                      # 收费亭个数，默认大于等于车道数
-        self.lane_length = lane_length                  # 区域总长度，收费站放置于中央位置
-        self.limit_length = lane_length / 2             # 限速区域长度
-        self.speed_limit = 10                           # 收费区域限速
-        self.booth_type = booth_type                    # 收费亭类型
-        self.shape = shape                              # 收费区域形状
-        self.pattern = pattern                          # 合流模式
-        self.time_step = time_step                      # 仿真时间间隔
+        self.lane_num = lane_num                                # 通行车道数
+        self.booth_num = booth_num                              # 收费亭个数，默认大于等于车道数
+        self.lane_length = 123.2 + 44 * (booth_num - lane_num)  # 区域总长度，收费站放置于中央位置
+        self.limit_length = self.lane_length / 2                # 限速区域长度
+        self.speed_limit = SPEED_LIMIT                          # 收费区域限速
+        self.booth_type = booth_type                            # 收费亭类型
+        self.shape = shape                                      # 收费区域形状
+        self.pattern = pattern                                  # 合流模式
+        self.time_step = time_step                              # 仿真时间间隔
 
         # 动态变化信息
         self.lanes = [[] for i in range(booth_num + 2)] # 记录每车道车辆，按车头位置升序排序，多出两车道放置障碍物，便于处理变道
@@ -67,19 +69,39 @@ class LaneManager:
 
         # 根据形状建立车道
         if shape == "isosceles":
-            pass
+            seg_num = int((booth_num - lane_num) // 2)
+            seg_length = 5 / 6 * self.lane_length / (booth_num - lane_num)
+            for i, j in zip(range(1, seg_num + 1), range(seg_num, 0, -1)):
+                self.add_barrier(i, seg_length * j)
+            for i in range(1, booth_num - lane_num - seg_num + 1):
+                self.add_barrier(seg_num + lane_num + i, seg_length * i)
+            self.valid_lane_indices = range(seg_num + 1, seg_num + lane_num + 1)
         elif shape == "right":
-            seg_num = booth_num - lane_num + 1
-            seg_length = lane_length / 2 / seg_num
+            seg_length = 5 / 12 * self.lane_length / (booth_num - lane_num)
             for i in range(1, booth_num - lane_num + 1):
                 self.add_barrier(lane_num + i, seg_length * i)
             self.valid_lane_indices = range(1, lane_num + 1)
+        elif shape == "squares":
+            seg_num = int((booth_num - lane_num) // 2)
+            seg_length = 5 / 12 * self.lane_length
+            for i, j in zip(range(1, seg_num + 1), range(seg_num, 0, -1)):
+                self.add_barrier(i, seg_length * j)
+            for i in range(1, booth_num - lane_num - seg_num + 1):
+                self.add_barrier(seg_num + lane_num + i, seg_length * i)
+            self.valid_lane_indices = range(seg_num + 1, seg_num + lane_num + 1)
+        elif shape == "side square":
+            seg_length = 5 / 12 * self.lane_length
+            for i in range(1, booth_num - lane_num + 1):
+                self.add_barrier(lane_num + i, seg_length)
+            self.valid_lane_indices = range(1, lane_num + 1)
+        else:
+            raise RuntimeError("wrong shape")
 
         # 第一、最后道放置障碍物
-        barrier1 = Vehicle("barrier", lane_length, 0)
-        barrier2 = Vehicle("barrier", lane_length, 0)
-        barrier1.position = lane_length
-        barrier2.position = lane_length
+        barrier1 = Vehicle("barrier", self.lane_length, 0)
+        barrier2 = Vehicle("barrier", self.lane_length, 0)
+        barrier1.position = self.lane_length
+        barrier2.position = self.lane_length
         self.lanes[0].append(barrier1)
         self.lanes[-1].append(barrier2)
 
@@ -224,9 +246,9 @@ class LaneManager:
                 nearest_left_behind, nearest_left_front = None, None
                 left_overlap_found = False
                 for left_index, left in enumerate(self.lanes[lane_index - 1]):
-                    if vehicle.position - vehicle.length - left.position > 0:
+                    if vehicle.position - vehicle.length - left.position >= 0:
                         nearest_left_behind = left
-                    elif left.position - left.length - vehicle.position > 0:
+                    elif left.position - left.length - vehicle.position >= 0:
                         nearest_left_front = left
                         break
                     else:

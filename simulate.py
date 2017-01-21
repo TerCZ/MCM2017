@@ -10,7 +10,7 @@ VEHICLE_PER_HOUR = 3600
 
 
 def main():
-    manager = LaneManager(lane_num=LANE_NUM, booth_num=BOOTH_NUM, lane_length=LANE_LEN, shape="right",
+    manager = LaneManager(lane_num=LANE_NUM, booth_num=BOOTH_NUM, lane_length=LANE_LEN, shape="side square",
                           pattern="regular", booth_type="human", time_step=TIME_STEP)
 
     vehicle_per_sec = 3600 / VEHICLE_PER_HOUR
