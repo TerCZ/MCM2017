@@ -4,9 +4,11 @@ from time import sleep
 
 TIME_STEP = 0.3
 LANE_NUM = 4
-BOOTH_NUM = 10
+BOOTH_NUM = 8
 LANE_LEN = 100              # 区域总长
-VEHICLE_PER_HOUR = 6000
+VEHICLE_PER_HOUR = 3600
+
+
 
 
 def main():
@@ -32,8 +34,8 @@ def main():
             vehicle_count += new_vehicle_num
 
         # 全局更新
-        manager.info()
-        sleep(0.04)
+        # manager.info()
+        # sleep(0.04)
         manager.update()
     out_count, total_time_spent, crash_count, lane_change_count = manager.get_stat()
     print("throughput\t", out_count / timer)
