@@ -1,5 +1,7 @@
 from model import LaneManager
-from time import sleep
+from math import exp
+from random import random
+import csv
 
 
 TIME_STEP = 0.3
@@ -7,26 +9,27 @@ LANE_NUM = 4
 BOOTH_NUM = 8
 LANE_LEN = 100              # 区域总长
 VEHICLE_PER_HOUR = 3600
+SIM_TIME = 360
 
 
+def simulate(lane_num=LANE_NUM, booth_num=BOOTH_NUM, shape="symmetric", interval=3, auto_ratio=0, non_stop_num=0,
+             total_time=SIM_TIME):
+    manager = LaneManager(lane_num=lane_num, booth_num=booth_num, shape=shape, interval=interval, auto_ratio=auto_ratio,
+                          non_stop_num=non_stop_num, time_step=TIME_STEP)
 
-
-def main():
-    manager = LaneManager(lane_num=LANE_NUM, booth_num=BOOTH_NUM, lane_length=LANE_LEN, shape="side",
-                          pattern="regular", interval=4, booth_type="human", time_step=TIME_STEP)
-
-    vehicle_per_sec = 3600 / VEHICLE_PER_HOUR
+    vehicle_per_time_step = VEHICLE_PER_HOUR * TIME_STEP / 3600
     timer, remainder, vehicle_count = 0, 0, 0
-    while timer <= 3600:
+    while timer <= total_time:
         # 更新时间
         timer += TIME_STEP
-        # 计算此循环内新加入车辆数
+
+        # 计算此循环内新加入车辆数，泊松分布
+        l = exp(-vehicle_per_time_step)
         new_vehicle_num = 0
-        if (remainder + TIME_STEP) // vehicle_per_sec > 0:
-            new_vehicle_num = (remainder + TIME_STEP) // vehicle_per_sec
-            remainder = (remainder + TIME_STEP) % vehicle_per_sec
-        else:
-            remainder += TIME_STEP
+        p = random()
+        while p > l:
+            p *= random()
+            new_vehicle_num += 1
 
         # 添加车辆
         if new_vehicle_num:
@@ -35,13 +38,25 @@ def main():
 
         # 全局更新
         # manager.info()
-        # sleep(0.04)
         manager.update()
-    out_count, total_time_spent, crash_count, lane_change_count = manager.get_stat()
-    print("throughput\t", out_count / timer)
-    print("latency\t", total_time_spent / vehicle_count)
-    print("lane change\t", lane_change_count)
-    print("crash\t", crash_count)
+
+    return manager.get_stat() + (vehicle_count,)
+
+
+def main():
+    with open("result.csv", "w", newline="") as outfile:
+        writer = csv.writer(outfile)
+        writer.writerow(["L", "B", "形状", "m", "通行量", "平均车速", "换道次数", "急刹车次数", "造价"])
+        for L in range(2, 5):
+            for B in range(L+1, 17):
+                for shape in ["symmetric", "side"]:
+                    for m in range(1, 5):
+                        result = simulate(lane_num=L, booth_num=B, interval=m, shape=shape)
+                        out_count, total_time_spent, crash_count, lane_change_count, vehicle_count = result
+                        writer.writerow([L, B, shape, m, out_count / 3600, total_time_spent / vehicle_count, lane_change_count, crash_count])
+                        print(L, B, shape, m, "down")
+
+
 
 if __name__ == '__main__':
     main()

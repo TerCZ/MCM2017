@@ -1,16 +1,18 @@
-from random import choice, randint
+from random import choice, randint, random
 from math import sqrt, ceil, floor
+from time import sleep
 
 
 CAR_LEN = 5
-OUT_BUFFER = 10
+OUT_BUFFER = 21
+
 DESIRED_VELOCITY = 60
 MAX_ACCELERATION = 2
 COMFORTABLE_DECELERATION = 3
 ACCELERATION_EXPONENT = 5
 MIN_SPACE = 2
 DESIRED_HEADWAY = 1.5
-POLITENESS = 0.5
+POLITENESS = 0.3
 DIST_THR = 3
 
 AUTO_DESIRED_VELOCITY = 80
@@ -19,21 +21,22 @@ AUTO_COMFORTABLE_DECELERATION = 5
 AUTO_ACCELERATION_EXPONENT = 5
 AUTO_MIN_SPACE = 1
 AUTO_DESIRED_HEADWAY = 1
-AUTO_POLITENESS = 1
-AUTO_DIST_THR = 5
+AUTO_POLITENESS = 0.1
+AUTO_DIST_THR = 0
 
 
 class Vehicle:
-    def __init__(self, type, speed, length=None):
+    def __init__(self, type, speed=None, length=None):
         self.type = type
         self.position = 0
         self.timer = 0
-        self.speed = speed
 
         if type == "barrier":
             self.length = length
+            self.speed = 0
         elif type == "car":
             self.length = CAR_LEN
+            self.speed = DESIRED_VELOCITY
             self.v0 = DESIRED_VELOCITY
             self.a = MAX_ACCELERATION
             self.b = COMFORTABLE_DECELERATION
@@ -43,6 +46,7 @@ class Vehicle:
             self.dist_thr = DIST_THR
         elif type == "auto":
             self.length = CAR_LEN
+            self.speed = AUTO_DESIRED_VELOCITY
             self.v0 = AUTO_DESIRED_VELOCITY
             self.a = AUTO_MAX_ACCELERATION
             self.b = AUTO_COMFORTABLE_DECELERATION
@@ -57,16 +61,13 @@ class LaneManager:
     管理区域道路，包括道路分流合流、收费站减速停车等情况
     shape: "side", "SYMMETRIC"
     """
-    def __init__(self, lane_num, booth_num, lane_length, shape, pattern, interval, booth_type, time_step):
+    def __init__(self, lane_num, booth_num, shape, interval, auto_ratio, non_stop_num, time_step):
         # 道路基本信息
         self.lane_num = lane_num                                # 通行车道数
         self.booth_num = booth_num                              # 收费亭个数，默认大于等于车道数
-        # self.lane_length = 123.2 + 44 * (booth_num - lane_num)  # 区域总长度，收费站放置于中央位置
-        # self.limit_length = self.lane_length / 2                # 限速区域长度
-        # self.speed_limit = SPEED_LIMIT                          # 收费区域限速
-        self.booth_type = booth_type                            # 收费亭类型
+        self.non_stop_num = non_stop_num                        # 收费亭类型
         self.shape = shape                                      # 收费区域形状
-        self.pattern = pattern                                  # 合流模式
+        self.auto_ratio = auto_ratio                            # 自动驾驶汽车个数
         self.time_step = time_step                              # 仿真时间间隔
 
         # 动态变化信息
@@ -75,23 +76,23 @@ class LaneManager:
         self.lane_change_count = 0                      # 记录变道次数
         self.crash_count = 0                            # 记录撞车次数
         self.out_count = 0                              # 记录通过数
-        self.total_time_spent = 0                       # 记录通过车辆总花费时间
+        self.all_time_spent_reci = 0                       # 记录通过车辆总花费时间
 
         # 根据形状建立车道
         if shape == "symmetric":
-            upper_seg_num = ceil((booth_num - lane_num) / 2)
-            lower_seg_num = floor((booth_num - lane_num) / 2)
-            seg_length = interval * CAR_LEN
-            self.lane_length = OUT_BUFFER + upper_seg_num * (interval + 1) * (CAR_LEN + MIN_SPACE)
-            for i, j in zip(range(1, upper_seg_num + 1), range(upper_seg_num, 0, -1)):
+            upper_extra_lane_num = ceil((booth_num - lane_num) / 2)
+            lower_extra_lane_num = floor((booth_num - lane_num) / 2)
+            seg_length = interval * (CAR_LEN + MIN_SPACE)
+            self.lane_length = OUT_BUFFER + (upper_extra_lane_num + 1) * interval * (CAR_LEN + MIN_SPACE)
+            for i, j in zip(range(1, upper_extra_lane_num + 1), range(upper_extra_lane_num, 0, -1)):
                 self.add_barrier(i, seg_length * j)
-            for i in range(1, lower_seg_num + 1):
-                self.add_barrier(upper_seg_num + lane_num + i, seg_length * i)
+            for i in range(1, lower_extra_lane_num + 1):
+                self.add_barrier(upper_extra_lane_num + lane_num + i, seg_length * i)
         elif shape == "side":
-            seg_num = (booth_num - lane_num)
-            seg_length = interval * CAR_LEN
-            self.lane_length = OUT_BUFFER + seg_num * (interval + 1) * (CAR_LEN + MIN_SPACE)
-            for i in range(1, seg_num + 1):
+            extra_lane_num = booth_num - lane_num
+            seg_length = interval * (CAR_LEN + MIN_SPACE)
+            self.lane_length = OUT_BUFFER + (extra_lane_num + 1) * interval * (CAR_LEN + MIN_SPACE)
+            for i in range(1, extra_lane_num + 1):
                 self.add_barrier(lane_num + i, seg_length * i)
 
         # 第一、最后道放置障碍物
@@ -109,7 +110,13 @@ class LaneManager:
 
     def add_vehicle(self, lane_index):
         # 新建一辆车
-        vehicle = Vehicle("car", speed=0)
+        if random() < self.auto_ratio:
+            vehicle = Vehicle("auto")
+        else:
+            vehicle = Vehicle("car")
+
+        if lane_index > self.non_stop_num:  # 若在停车通道，则速度为零
+            vehicle.speed = 0
 
         # 检查是否能进入指定车道
         if self.lanes[lane_index]:  # 若车道非空
@@ -143,7 +150,7 @@ class LaneManager:
             for vehicle_index, vehicle in enumerate(lane):
                 if vehicle.position >= self.lane_length and vehicle.type != "barrier":
                     self.out_count += 1
-                    self.total_time_spent += vehicle.timer
+                    self.all_time_spent_reci += 1 / vehicle.timer
                     lane[vehicle_index] = None
             self.lanes[lane_index] = [x for x in lane if x is not None]
 
@@ -358,7 +365,7 @@ class LaneManager:
             for mark in lane_list:
                 print(mark, end="")
             print()
-        print()
+        sleep(0.04)
 
     def get_stat(self):
-        return self.out_count, self.total_time_spent, self.crash_count, self.lane_change_count
+        return self.out_count, self.lane_length * self.all_time_spent_reci / self.out_count, self.crash_count, self.lane_change_count
